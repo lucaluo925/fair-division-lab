@@ -9,8 +9,7 @@ from scipy.optimize import linear_sum_assignment, minimize
 
 st.set_page_config(page_title="合租分房决策系统", page_icon="🏠", layout="centered")
 
-# =========================
-# 数据库管理 (V4 机制设计版)
+
 # =========================
 def init_db():
     conn = sqlite3.connect("data_engine_v4.db")
