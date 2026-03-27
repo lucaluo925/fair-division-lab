@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 from scipy.optimize import linear_sum_assignment, minimize
 
-DB_NAME = "fairshare_v2.db"
+DB_NAME = "fairshare_v3.db"
 
 # ==========================================
 # 1. 页面基础配置
