@@ -1,12 +1,15 @@
-import streamlit as st
-import sqlite3
-import uuid
+import os
 import json
-import numpy as np
+import uuid
+import sqlite3
 from datetime import datetime
+
+import numpy as np
+import streamlit as st
 from scipy.optimize import linear_sum_assignment, minimize
 
-DB_NAME = "fairshare_v3.db"
+DB_NAME = "/tmp/fairshare_v3.db" if os.path.exists("/mount/src") else "fairshare_v3.db"
+
 
 # ==========================================
 # 1. 页面基础配置
@@ -17,23 +20,14 @@ st.set_page_config(
     layout="centered"
 )
 
+
 # ==========================================
-# 2. 数据库初始化（自动兼容旧结构）
+# 2. 数据库初始化（当前阶段：强制重建）
 # ==========================================
-def table_exists(cur, table_name: str) -> bool:
-    cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,)
-    )
-    return cur.fetchone() is not None
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
 
-
-def get_columns(cur, table_name: str) -> list[str]:
-    cur.execute(f"PRAGMA table_info({table_name})")
-    return [row[1] for row in cur.fetchall()]
-
-
-def recreate_all_tables(cur):
     cur.execute("DROP TABLE IF EXISTS projects")
     cur.execute("DROP TABLE IF EXISTS rooms")
     cur.execute("DROP TABLE IF EXISTS bids")
@@ -72,43 +66,15 @@ def recreate_all_tables(cur):
         )
     """)
 
-
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
-
-    expected_projects = ["project_id", "created_at", "mode", "total_rent", "roommate_count"]
-    expected_rooms = ["id", "project_id", "room_name", "area", "has_bath", "light_score", "quiet_score", "fixed_price"]
-    expected_bids = ["id", "project_id", "user_name", "valuations_json", "last_submit_time", "modify_count"]
-
-    need_reset = False
-
-    if not table_exists(cur, "projects"):
-        need_reset = True
-    else:
-        if get_columns(cur, "projects") != expected_projects:
-            need_reset = True
-
-    if not table_exists(cur, "rooms"):
-        need_reset = True
-    else:
-        if get_columns(cur, "rooms") != expected_rooms:
-            need_reset = True
-
-    if not table_exists(cur, "bids"):
-        need_reset = True
-    else:
-        if get_columns(cur, "bids") != expected_bids:
-            need_reset = True
-
-    if need_reset:
-        recreate_all_tables(cur)
-
     conn.commit()
     conn.close()
 
 
-init_db()
+# 只在本次进程首次运行时初始化，避免每次交互都清空
+if "db_initialized" not in st.session_state:
+    init_db()
+    st.session_state.db_initialized = True
+
 
 # ==========================================
 # 3. 文案
@@ -263,6 +229,7 @@ OPTIONS = {
     }
 }
 
+
 # ==========================================
 # 4. 语言切换
 # ==========================================
@@ -276,6 +243,7 @@ with col_b:
 
 t = TEXT[st.session_state.lang]
 opt = OPTIONS[st.session_state.lang]
+
 
 # ==========================================
 # 5. 数据库操作
@@ -488,23 +456,14 @@ def compute_envy_free_allocation(users, rooms_data, valuations_matrix, total_ren
 
 
 # ==========================================
-# 7. 工具函数
-# ==========================================
-def format_room_features(room):
-    bath_text = "Yes" if room["bath"] else "No"
-    if st.session_state.lang == "ZH":
-        bath_text = "有" if room["bath"] else "无"
-    return f"{room['name']} | bath: {bath_text}"
-
-
-# ==========================================
-# 8. 主流程
+# 7. 主流程
 # ==========================================
 query_params = st.query_params
 project_id = query_params.get("project_id")
 
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
+
 
 # ------------------------------------------
 # A. 创建项目页
@@ -612,6 +571,7 @@ if not project_id:
             st.query_params["project_id"] = new_id
             st.rerun()
 
+
 # ------------------------------------------
 # B. 项目页
 # ------------------------------------------
@@ -660,14 +620,13 @@ else:
                 vals = []
                 cols = st.columns(roommate_count)
 
-                # 前 n-1 个可填，最后一个自动补足
                 for i in range(roommate_count - 1):
                     val = cols[i].number_input(
                         f"{t['val_for']} {rooms_data[i]['name']}",
                         min_value=0.0,
                         value=float(total_rent / roommate_count),
                         step=50.0,
-                        key=f"val_{i}"
+                        key=f"val_{project_id}_{i}"
                     )
                     vals.append(val)
 
@@ -676,7 +635,7 @@ else:
                     f"{t['val_for']} {rooms_data[-1]['name']}",
                     value=float(last_val),
                     disabled=True,
-                    key="last_val_auto"
+                    key=f"last_val_auto_{project_id}"
                 )
                 vals.append(last_val)
 
@@ -702,7 +661,7 @@ else:
                 users, rooms_data, valuations, total_rent
             )
 
-            # 模式 A：直接显示公平租金
+            # 模式 A
             if mode == "Mode A":
                 st.caption(t["mode_a_result_desc"])
 
@@ -714,12 +673,12 @@ else:
                         c1, c2 = st.columns([2, 1])
                         with c1:
                             st.markdown(f"**{user}**")
-                            st.write(f"{assigned_room}")
+                            st.write(assigned_room)
                         with c2:
                             st.markdown(f"**{t['rent_to_pay']}**")
                             st.write(f"{fair_price:.2f}")
 
-            # 模式 B：两层结构
+            # 模式 B
             else:
                 st.subheader(t["layer1_title"])
                 st.caption(t["layer1_desc"])
@@ -745,7 +704,7 @@ else:
                     sp = side_payments[user]
 
                     with st.container(border=True):
-                        st.markdown(f"**{user} → {assigned_room}**")
+                        st.markdown(f"**{user} -> {assigned_room}**")
 
                         r1, r2 = st.columns(2)
                         with r1:
