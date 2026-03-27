@@ -8,11 +8,10 @@ import numpy as np
 import streamlit as st
 from scipy.optimize import linear_sum_assignment, minimize
 
-DB_NAME = "/tmp/fairshare_v3.db" if os.path.exists("/mount/src") else "fairshare_v3.db"
-
+DB_NAME = "/tmp/fairshare_v4.db" if os.path.exists("/mount/src") else "fairshare_v4.db"
 
 # ==========================================
-# 1. 页面基础配置
+# 1. Page config
 # ==========================================
 st.set_page_config(
     page_title="FairShare",
@@ -20,49 +19,45 @@ st.set_page_config(
     layout="centered"
 )
 
-
 # ==========================================
-# 2. 数据库初始化（当前阶段：强制重建）
+# 2. Database
 # ==========================================
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    cur.execute("DROP TABLE IF EXISTS projects")
-    cur.execute("DROP TABLE IF EXISTS rooms")
-    cur.execute("DROP TABLE IF EXISTS bids")
-
     cur.execute("""
-        CREATE TABLE projects (
+        CREATE TABLE IF NOT EXISTS projects (
             project_id TEXT PRIMARY KEY,
-            created_at TEXT,
-            mode TEXT,
-            total_rent REAL,
-            roommate_count INTEGER
+            created_at TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            total_rent REAL NOT NULL,
+            roommate_count INTEGER NOT NULL,
+            is_finalized INTEGER NOT NULL DEFAULT 0
         )
     """)
 
     cur.execute("""
-        CREATE TABLE rooms (
+        CREATE TABLE IF NOT EXISTS rooms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT,
-            room_name TEXT,
-            area INTEGER,
-            has_bath INTEGER,
-            light_score INTEGER,
-            quiet_score INTEGER,
-            fixed_price REAL
+            project_id TEXT NOT NULL,
+            room_name TEXT NOT NULL,
+            area INTEGER NOT NULL,
+            has_bath INTEGER NOT NULL,
+            light_score INTEGER NOT NULL,
+            quiet_score INTEGER NOT NULL,
+            fixed_price REAL NOT NULL DEFAULT 0
         )
     """)
 
     cur.execute("""
-        CREATE TABLE bids (
+        CREATE TABLE IF NOT EXISTS bids (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT,
-            user_name TEXT,
-            valuations_json TEXT,
-            last_submit_time TEXT,
-            modify_count INTEGER
+            project_id TEXT NOT NULL,
+            user_name TEXT NOT NULL,
+            valuations_json TEXT NOT NULL,
+            last_submit_time TEXT NOT NULL,
+            modify_count INTEGER NOT NULL DEFAULT 0
         )
     """)
 
@@ -70,14 +65,10 @@ def init_db():
     conn.close()
 
 
-# 只在本次进程首次运行时初始化，避免每次交互都清空
-if "db_initialized" not in st.session_state:
-    init_db()
-    st.session_state.db_initialized = True
-
+init_db()
 
 # ==========================================
-# 3. 文案
+# 3. Text
 # ==========================================
 TEXT = {
     "EN": {
@@ -102,7 +93,7 @@ TEXT = {
         "invite_title": "Invite your roommates",
         "invite_desc": "Share this link. Everyone will submit privately.",
         "progress": "Progress: {0} / {1} submitted",
-        "locked": "Your preferences are locked. Waiting for others...",
+        "locked": "Your preferences are submitted. Waiting for others...",
         "btn_refresh": "Refresh",
         "btn_edit": "Withdraw and edit bid",
         "input_title": "How much is each room worth to you?",
@@ -110,7 +101,11 @@ TEXT = {
         "agent_name": "Your name / nickname",
         "val_for": "Value for",
         "btn_submit": "Submit preferences",
-        "err_matrix": "Please check your name and valuations.",
+        "err_name": "Please enter your name.",
+        "err_sum": "Your total must equal the apartment's total rent.",
+        "sum_label": "Current total",
+        "sum_ok": "Total matches the apartment rent.",
+        "sum_diff": "Difference",
         "success_title": "Results Ready",
         "rent_to_pay": "Fair monthly rent",
         "layer1_title": "Layer 1: Recommended assignment",
@@ -124,10 +119,11 @@ TEXT = {
         "market_price": "Contract price",
         "theory_price": "Algorithmic fair price",
         "net_transfer": "Optional side payment",
-        "regret_tip": "After the final result is generated, bids are locked for this round. If you want a new outcome, start a new round.",
+        "regret_tip": "Bids can be edited only before all roommates have submitted. Once results are generated, the round is locked.",
         "mode_a_result_desc": "Based on everyone's valuations, here is the recommended room assignment and fair rent split.",
         "invalid_link": "Invalid or expired link.",
         "copied_hint": "Copy and send this link to your roommates",
+        "finalized_note": "All submissions are complete. This round is now locked."
     },
     "ZH": {
         "title": "FairShare 科学分房",
@@ -151,7 +147,7 @@ TEXT = {
         "invite_title": "邀请室友填写",
         "invite_desc": "把这个链接发到群里，大家分别填写。",
         "progress": "提交进度：{0} / {1}",
-        "locked": "你的估值已锁定，正在等待其他人提交。",
+        "locked": "你的估值已提交，正在等待其他人填写。",
         "btn_refresh": "刷新进度",
         "btn_edit": "撤回并修改估值",
         "input_title": "你觉得每个房间值多少钱？",
@@ -159,7 +155,11 @@ TEXT = {
         "agent_name": "你的称呼",
         "val_for": "对该房的估值",
         "btn_submit": "确认提交",
-        "err_matrix": "请检查你的名字和估值填写是否正确。",
+        "err_name": "请填写你的称呼。",
+        "err_sum": "你的总和必须等于公寓总租金。",
+        "sum_label": "当前总和",
+        "sum_ok": "总和已与公寓总租金一致。",
+        "sum_diff": "差额",
         "success_title": "结果已生成",
         "rent_to_pay": "算法公平月租",
         "layer1_title": "第一层：推荐分配方案",
@@ -173,10 +173,11 @@ TEXT = {
         "market_price": "合同价格",
         "theory_price": "算法公平价",
         "net_transfer": "可选私下补偿",
-        "regret_tip": "结果生成后，本轮估值将锁定。如果想重新计算，请重新开启新一轮。",
+        "regret_tip": "只有在所有人都提交完成之前才能撤回修改。结果一旦生成，本轮将锁定。",
         "mode_a_result_desc": "以下是基于所有人估值得到的推荐分房方案与公平租金分摊。",
         "invalid_link": "链接无效或已失效。",
         "copied_hint": "复制下面链接发给室友",
+        "finalized_note": "所有人都已提交，本轮结果已锁定。"
     }
 }
 
@@ -229,9 +230,8 @@ OPTIONS = {
     }
 }
 
-
 # ==========================================
-# 4. 语言切换
+# 4. Language switch
 # ==========================================
 if "lang" not in st.session_state:
     st.session_state.lang = "ZH"
@@ -244,9 +244,8 @@ with col_b:
 t = TEXT[st.session_state.lang]
 opt = OPTIONS[st.session_state.lang]
 
-
 # ==========================================
-# 5. 数据库操作
+# 5. DB helpers
 # ==========================================
 def create_project(project_id, mode, total_rent, roommate_count, rooms_data):
     conn = sqlite3.connect(DB_NAME)
@@ -254,9 +253,9 @@ def create_project(project_id, mode, total_rent, roommate_count, rooms_data):
 
     cur.execute("""
         INSERT INTO projects (
-            project_id, created_at, mode, total_rent, roommate_count
+            project_id, created_at, mode, total_rent, roommate_count, is_finalized
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, 0)
     """, (
         project_id,
         datetime.now().isoformat(),
@@ -290,7 +289,7 @@ def get_project_info(project_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT mode, total_rent, roommate_count
+        SELECT mode, total_rent, roommate_count, is_finalized
         FROM projects
         WHERE project_id=?
     """, (project_id,))
@@ -298,7 +297,7 @@ def get_project_info(project_id):
 
     if not proj:
         conn.close()
-        return None, None, None, []
+        return None, None, None, None, []
 
     cur.execute("""
         SELECT room_name, area, has_bath, light_score, quiet_score, fixed_price
@@ -306,11 +305,11 @@ def get_project_info(project_id):
         WHERE project_id=?
         ORDER BY id ASC
     """, (project_id,))
-    room_rows = cur.fetchall()
+    rows = cur.fetchall()
     conn.close()
 
     rooms = []
-    for row in room_rows:
+    for row in rows:
         rooms.append({
             "name": row[0],
             "area": row[1],
@@ -320,7 +319,19 @@ def get_project_info(project_id):
             "fixed_price": row[5]
         })
 
-    return proj[0], proj[1], proj[2], rooms
+    return proj[0], proj[1], proj[2], proj[3], rooms
+
+
+def finalize_project(project_id):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE projects
+        SET is_finalized=1
+        WHERE project_id=?
+    """, (project_id,))
+    conn.commit()
+    conn.close()
 
 
 def submit_or_update_bid(project_id, user_name, valuations):
@@ -369,7 +380,6 @@ def submit_or_update_bid(project_id, user_name, valuations):
 def get_all_bids(project_id):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-
     cur.execute("""
         SELECT user_name, valuations_json
         FROM bids
@@ -393,18 +403,16 @@ def delete_bid(project_id, user_name):
 
 
 # ==========================================
-# 6. 算法
+# 6. Algorithm
 # ==========================================
 def compute_envy_free_allocation(users, rooms_data, valuations_matrix, total_rent):
     n = len(users)
     room_names = [r["name"] for r in rooms_data]
     fixed_prices_map = {r["name"]: r["fixed_price"] for r in rooms_data}
 
-    # Step 1: assignment
     row_ind, col_ind = linear_sum_assignment(-valuations_matrix)
     assignment_idx = {int(i): int(col_ind[i]) for i in range(n)}
 
-    # Step 2: envy-free pricing approximation
     avg_price = total_rent / n
 
     def objective(p):
@@ -456,7 +464,7 @@ def compute_envy_free_allocation(users, rooms_data, valuations_matrix, total_ren
 
 
 # ==========================================
-# 7. 主流程
+# 7. Main
 # ==========================================
 query_params = st.query_params
 project_id = query_params.get("project_id")
@@ -464,9 +472,8 @@ project_id = query_params.get("project_id")
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
-
 # ------------------------------------------
-# A. 创建项目页
+# A. Create project page
 # ------------------------------------------
 if not project_id:
     st.title(t["title"])
@@ -571,12 +578,11 @@ if not project_id:
             st.query_params["project_id"] = new_id
             st.rerun()
 
-
 # ------------------------------------------
-# B. 项目页
+# B. Project page
 # ------------------------------------------
 else:
-    mode, total_rent, roommate_count, rooms_data = get_project_info(project_id)
+    mode, total_rent, roommate_count, is_finalized, rooms_data = get_project_info(project_id)
 
     if not total_rent:
         st.error(t["invalid_link"])
@@ -586,8 +592,13 @@ else:
     submitted_users = [b[0] for b in current_bids]
     share_link = f"https://fairdivisionlab-fd6majrlizgnvoa3y5fnui.streamlit.app/?project_id={project_id}"
 
+    # Finalize automatically when all submitted
+    if len(current_bids) == roommate_count and not is_finalized:
+        finalize_project(project_id)
+        is_finalized = 1
+
     # -----------------------------
-    # B1. 收集出价阶段
+    # B1. Collection stage
     # -----------------------------
     if len(current_bids) < roommate_count:
         st.title(t["title"])
@@ -620,7 +631,7 @@ else:
                 vals = []
                 cols = st.columns(roommate_count)
 
-                for i in range(roommate_count - 1):
+                for i in range(roommate_count):
                     val = cols[i].number_input(
                         f"{t['val_for']} {rooms_data[i]['name']}",
                         min_value=0.0,
@@ -630,28 +641,32 @@ else:
                     )
                     vals.append(val)
 
-                last_val = total_rent - sum(vals)
-                cols[-1].number_input(
-                    f"{t['val_for']} {rooms_data[-1]['name']}",
-                    value=float(last_val),
-                    disabled=True,
-                    key=f"last_val_auto_{project_id}"
-                )
-                vals.append(last_val)
+                current_sum = sum(vals)
+                diff = total_rent - current_sum
+
+                st.write(f"{t['sum_label']}: {current_sum:.2f} / {total_rent:.2f}")
+
+                if abs(diff) < 1e-6:
+                    st.success(t["sum_ok"])
+                else:
+                    st.warning(f"{t['sum_diff']}: {diff:.2f}")
 
                 if st.button(t["btn_submit"], type="primary", use_container_width=True):
-                    if not user_name.strip() or last_val < 0:
-                        st.error(t["err_matrix"])
+                    if not user_name.strip():
+                        st.error(t["err_name"])
+                    elif abs(sum(vals) - total_rent) > 1e-6:
+                        st.error(t["err_sum"])
                     else:
                         submit_or_update_bid(project_id, user_name.strip(), vals)
                         st.session_state.current_user = user_name.strip()
                         st.rerun()
 
     # -----------------------------
-    # B2. 结果展示阶段
+    # B2. Results stage
     # -----------------------------
     else:
         st.title(t["success_title"])
+        st.info(t["finalized_note"])
 
         users = [b[0] for b in current_bids]
         valuations = np.array([json.loads(b[1]) for b in current_bids])
@@ -661,7 +676,7 @@ else:
                 users, rooms_data, valuations, total_rent
             )
 
-            # 模式 A
+            # Mode A
             if mode == "Mode A":
                 st.caption(t["mode_a_result_desc"])
 
@@ -678,7 +693,7 @@ else:
                             st.markdown(f"**{t['rent_to_pay']}**")
                             st.write(f"{fair_price:.2f}")
 
-            # 模式 B
+            # Mode B
             else:
                 st.subheader(t["layer1_title"])
                 st.caption(t["layer1_desc"])
