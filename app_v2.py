@@ -7,10 +7,36 @@ import pandas as pd
 from datetime import datetime
 from scipy.optimize import linear_sum_assignment, minimize
 
+# ==========================================
+# 🛠️ 隐藏后门：Researcher Dashboard (?admin=true)
+# (仅用于研究者提取数据，不对外公开)
+# ==========================================
 DB_NAME = "mechanism_design_lab.db"
 
+if st.query_params.get("admin") == "true":
+    st.set_page_config(page_title="Researcher Dashboard", layout="wide")
+    st.title("🔬 Mechanism Design Lab | Data Center")
+    st.info("Authorized Personnel Only.")
+    
+    if st.text_input("Access Key:", type="password") == "123":
+        try:
+            conn = sqlite3.connect(DB_NAME)
+            st.success("Database Connected Successfully.")
+            
+            tab1, tab2, tab3 = st.tabs(["Projects", "Rooms", "Bids"])
+            with tab1:
+                st.dataframe(pd.read_sql_query("SELECT * FROM projects", conn), use_container_width=True)
+            with tab2:
+                st.dataframe(pd.read_sql_query("SELECT * FROM rooms", conn), use_container_width=True)
+            with tab3:
+                st.dataframe(pd.read_sql_query("SELECT * FROM bids", conn), use_container_width=True)
+            conn.close()
+        except Exception as e:
+            st.error(f"Error: {e}")
+    st.stop() 
+
 # ==========================================
-# 1. 基础配置 & 数据库初始化
+# 1. 基础配置 & 数据库
 # ==========================================
 st.set_page_config(page_title="FairShare | 科学合租决策", page_icon="🏠", layout="centered")
 
@@ -26,7 +52,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# 2. 国际化文案字典
+# 2. 国际化文案字典 (严谨的学术/产品风)
 # ==========================================
 TEXT = {
     "EN": {
@@ -63,7 +89,7 @@ TEXT = {
         "layer2_desc": "If you wish to further balance perceived fairness, the algorithm suggests the following side payments as a reference for negotiation.",
         "disclaimer": "⚠️ Note: Side payments are optional recommendations to help you negotiate, not enforced transfers. This tool does not change your actual lease.",
         
-        # 结算文案 
+        # 结算文案 (剔除 Pool)
         "pays": "Suggested compensation to roommates:",
         "receives": "Suggested compensation from roommates:",
         "no_transfer": "No adjustment needed",
@@ -108,7 +134,7 @@ TEXT = {
         "layer2_desc": "如果大家希望进一步平衡心里的“公平感”，可以参考以下差价补偿金额进行私下协商。",
         "disclaimer": "⚠️ 免责声明：补偿金额仅作为协商的公平参考基准，不是强制执行方案。本系统不改变实际合同的房租定价。",
         
-        # 结算文案 
+        # 结算文案 (剔除 Pool)
         "pays": "建议私下补偿给室友:",
         "receives": "建议收取室友补偿:",
         "no_transfer": "无需差价调整",
@@ -201,12 +227,10 @@ def compute_envy_free_allocation_with_side_payments(users, rooms_data, valuation
     room_names = [r["name"] for r in rooms_data]
     fixed_prices_map = {r["name"]: r["fixed_price"] for r in rooms_data}
     
-    # 匈牙利算法求最大效用分配
     row_ind, col_ind = linear_sum_assignment(-valuations_matrix)
     assignment_idx = {int(i): int(col_ind[i]) for i in range(n)}
     avg_price = total_rent / n
 
-    # SLSQP 约束优化求无嫉妒理论价格
     def objective(p): return np.sum((p - avg_price) ** 2)
     constraints = [{"type": "eq", "fun": lambda p: np.sum(p) - total_rent}]
     for i in range(n):
@@ -289,8 +313,6 @@ else:
     current_bids = get_all_bids(project_id)
     submitted_users = [b[0] for b in current_bids]
     
-    # 获取当前应用的 URL 作为分享链接
-    # 注意：部署到云端后，请确保这里的链接与您实际的域名相符
     share_link = f"https://fairdivisionlab-fd6majrlizgnvoa3y5fnui.streamlit.app/?project_id={project_id}"
     
     # --- 状态 A：收集出价 ---
@@ -338,7 +360,7 @@ else:
                     st.session_state.current_user = user_name
                     st.rerun()
 
-    # --- 状态 B：展示分配结果 ---
+    # --- 状态 B：展示分配结果 (彻底移除修改功能，防止博弈操纵) ---
     else:
         st.balloons()
         st.markdown(f"### {t['success_title']}")
@@ -405,8 +427,10 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
             
-            # --- 人性化防反悔提示 (结果已锁定，维护 Incentive Compatibility) ---
+            # --- 人性化防反悔提示 (结果已锁定) ---
             st.info(t["regret_tip"])
+            
+            # 注意：此处故意移除了 delete_bid 和 btn_edit 的逻辑，确保 Incentive Compatibility
                 
         except Exception as e:
             st.error(f"Calculation Error / 计算出错: {e}")
