@@ -26,17 +26,13 @@ FairShare models room allocation as a **constrained assignment problem with comp
 
 The system follows four steps:
 
-1. **Preference Elicitation**  
-   Each user submits a valuation vector representing their willingness to pay for each room.
+1. **Preference Elicitation** Each user submits a valuation vector representing their willingness to pay for each room.
 
-2. **Optimal Assignment**  
-   A **Maximum Weight Bipartite Matching (Hungarian Algorithm)** is used to maximize total utility.
+2. **Optimal Assignment** A **Maximum Weight Bipartite Matching (Hungarian Algorithm)** is used to maximize total utility.
 
-3. **Envy-Free Approximation**  
-   A price vector is computed using **Sequential Least Squares Programming (SLSQP)** to approximate envy-free conditions.
+3. **Envy-Free Approximation** A price vector is computed using **Sequential Least Squares Programming (SLSQP)** to approximate envy-free conditions.
 
-4. **Side Payments**  
-   A zero-sum transfer scheme is calculated to align fixed lease prices with subjective valuations.
+4. **Side Payments** A zero-sum transfer scheme is calculated to align fixed lease prices with subjective valuations.
 
 ---
 
@@ -44,9 +40,9 @@ The system follows four steps:
 
 Initial use of the system highlights several consistent patterns:
 
-- Rooms with similar market prices can have significantly different subjective values  
-- Qualitative features (e.g., quietness, privacy) are often undervalued in fixed pricing  
-- Small side payments can improve perceived fairness in constrained settings  
+- Rooms with similar market prices can have significantly different subjective values.
+- Qualitative features (e.g., quietness, privacy) are often undervalued in fixed pricing.
+- Small side payments can improve perceived fairness in constrained settings.
 
 These observations suggest that allocation conflicts are often driven more by preference differences than by price levels themselves.
 
@@ -56,8 +52,8 @@ These observations suggest that allocation conflicts are often driven more by pr
 
 User valuation data shows **structured heterogeneity** in preferences:
 
-- Some users focus on maximizing overall value  
-- Others exhibit strong preferences for specific features  
+- Some users focus on maximizing overall value.
+- Others exhibit strong preferences for specific features.
 
 This variation helps explain why simple equal splits often fail, and why compensation mechanisms can improve outcomes.
 
@@ -65,10 +61,10 @@ This variation helps explain why simple equal splits often fail, and why compens
 
 ## ⚙️ Tech Stack
 
-- Frontend: Streamlit (English / Chinese)  
-- Optimization: SciPy (`linear_sum_assignment`, `minimize`)  
-- Data: NumPy, Pandas  
-- Storage: SQLite  
+- **Frontend:** Streamlit (English / Chinese)  
+- **Optimization:** SciPy (`linear_sum_assignment`, `minimize`)  
+- **Data:** NumPy, Pandas  
+- **Storage:** SQLite  
 
 ---
 
