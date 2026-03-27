@@ -358,3 +358,50 @@ else:
                 
         except Exception as e:
             st.error(f"Calculation Error / 计算出错: {e}")
+
+# ==========================================
+# 🛠️ Admin Dashboard (数据提取后门)
+# ==========================================
+import pandas as pd
+import sqlite3
+
+st.sidebar.markdown("---")
+with st.sidebar.expander("🛠️ Admin Dashboard (Dev Only)"):
+    # 设置一个简单的密码保护，防止别人乱点
+    admin_pwd = st.text_input("Enter Admin Password:", type="password", key="admin_pwd")
+    
+    if admin_pwd == "123":  # 你可以把 "123" 改成你想要的密码
+        st.success("Admin unlocked!")
+        
+        if st.button("Fetch Live Data"):
+            try:
+                # 1. 连接线上的真实数据库
+                conn = sqlite3.connect("mechanism_design_lab.db")
+                cursor = conn.cursor()
+                
+                # 2. 自动寻找表名
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+                tables = cursor.fetchall()
+                
+                if tables:
+                    real_table = tables[0][0]
+                    # 3. 读取数据
+                    df = pd.read_sql_query(f"SELECT * FROM {real_table}", conn)
+                    
+                    st.write(f"📊 Found {len(df)} records in table '{real_table}'")
+                    st.dataframe(df) # 在网页上直接预览表格
+                    
+                    # 4. 生成一键下载按钮
+                    csv = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download CSV",
+                        data=csv,
+                        file_name="fairshare_live_data.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.warning("⚠️ 数据库目前是空的，还没有任何人提交数据！")
+            except Exception as e:
+                st.error(f"Error: {e}")
+            finally:
+                conn.close()
