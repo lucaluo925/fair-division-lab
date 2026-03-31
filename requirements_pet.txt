@@ -1,0 +1,3 @@
+# Desktop Pet dependencies
+# tkinter ships with Python — no entry needed here.
+anthropic>=0.40.0          # Claude API (optional but recommended for AI chat)
